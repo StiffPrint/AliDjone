@@ -139,7 +139,7 @@ def main():
         tests = sorted(str(path) for path in (release / "tests").glob("*.test.mjs"))
         if not tests:
             raise RuntimeError("Release contains no tests")
-        run("runuser", "-u", "nobody", "--", NODE, "--test", *tests,
+        run("/usr/sbin/runuser", "-u", "nobody", "--", NODE, "--test", *tests,
             cwd=release, env={"PATH": "/opt/alidjone-runtime/bin:/usr/bin:/bin", "TZ": "UTC"})
         run("systemctl", "start", "alidjone-backup.service")
         result = subprocess.check_output(
