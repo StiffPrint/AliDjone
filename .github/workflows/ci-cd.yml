@@ -1,0 +1,106 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Tests, browser and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run lint
+      - name: Deployment extraction and rollback tests
+        run: python3 -m unittest discover -s tests -p '*_test.py' -v
+      - name: Shell syntax
+        run: bash -n scripts/deploy-ci.sh && sh -n deploy/ssh-entrypoint.sh
+      - name: Install isolated browser tooling
+        run: |
+          npm install --prefix "$RUNNER_TEMP/alidjone-browser" --no-package-lock --no-audit --no-fund playwright@1.63.0
+          "$RUNNER_TEMP/alidjone-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Browser scenarios
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/alidjone-browser/node_modules/playwright/index.mjs
+        run: node tests/browser.mjs
+      - run: npm run build
+      - name: Package the verified commit
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+        run: |
+          printf '%s\n' "$RELEASE_REVISION" > dist/REVISION
+          tar -czf release.tar.gz -C dist .
+          sha256sum release.tar.gz > release.tar.gz.sha256
+      - name: Save release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            release.tar.gz
+            release.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+      - name: Save browser screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-${{ github.run_id }}
+          path: outputs/browser/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  deploy:
+    name: Deploy production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: alidjone-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Download verified release
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ github.sha }}
+      - name: Verify archive checksum
+        run: sha256sum -c release.tar.gz.sha256
+      - name: Skip superseded commits
+        id: latest
+        run: |
+          latest=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer main commit exists; skipping this deployment.'
+          fi
+      - name: Deploy and check public HTTPS revision
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.ALIDJONE_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.ALIDJONE_DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.ALIDJONE_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.ALIDJONE_DEPLOY_KNOWN_HOSTS }}
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: bash scripts/deploy-ci.sh release.tar.gz

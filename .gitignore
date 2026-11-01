@@ -43,3 +43,14 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Standalone SQLite storage and local account setup
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/admin-access.txt
+
+# Python deployment checks
+__pycache__/
+*.py[cod]

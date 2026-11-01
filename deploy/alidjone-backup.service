@@ -1,0 +1,16 @@
+[Unit]
+Description=Verified SQLite backup of AliDjone
+
+[Service]
+Type=oneshot
+User=alidjone
+Group=alidjone
+WorkingDirectory=/opt/alidjone/current
+EnvironmentFile=/etc/alidjone.env
+Environment=BACKUP_DIR=/var/lib/alidjone/backups
+ExecStart=/opt/alidjone-runtime/bin/node scripts/backup.mjs
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alidjone

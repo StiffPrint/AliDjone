@@ -1,0 +1,25 @@
+[Unit]
+Description=AliDjone warehouse and sales
+After=network.target
+
+[Service]
+Type=simple
+User=alidjone
+Group=alidjone
+WorkingDirectory=/opt/alidjone/current
+EnvironmentFile=/etc/alidjone.env
+ExecStart=/opt/alidjone-runtime/bin/node server/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alidjone
+MemoryMax=384M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
