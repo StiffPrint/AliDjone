@@ -95,7 +95,7 @@ test("offline provisioning supports usernames and scoped stores, is repeatable, 
         assert.equal(
           (await fetch(base + "/api/finance", { headers: { Cookie: cookie } }))
             .status,
-          403,
+          200,
         );
         const wrongShop = await fetch(base + "/api/action", {
           method: "POST",

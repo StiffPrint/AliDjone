@@ -327,7 +327,18 @@ export async function createApp(options = {}) {
         const { user } = authenticated(request);
         const state = store.read();
         if (path === "/api/state") return json(view(state, user));
-        if (path === "/api/finance") return json(finance(state, user));
+        if (path === "/api/finance") {
+          const params = new URL(request.url, origin).searchParams;
+          const rawShop = params.get("shop");
+          if (rawShop !== null && !/^[0-2]$/.test(rawShop))
+            throw errorResponse(400, "Выберите магазин");
+          return json(
+            finance(state, user, {
+              shop: rawShop === null ? undefined : Number(rawShop),
+              date: params.get("date") || undefined,
+            }),
+          );
+        }
         if (path === "/api/users") {
           if (user.role !== "admin")
             throw new AccessError(

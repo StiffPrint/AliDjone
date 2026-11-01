@@ -69,9 +69,41 @@ try {
     await page.locator("#login-form input[name=login]").fill(email);
     await page.locator("#login-form input[name=password]").fill(password);
     await page.locator("#login-form button").click();
-    await page.getByRole("heading", { name: "Рабочий стол" }).waitFor();
+    await page
+      .getByRole("heading", {
+        name:
+          email === "manager@example.com"
+            ? "Магазин 1 · Островок"
+            : "Рабочий стол",
+        exact: true,
+      })
+      .waitFor();
   }
   await login("admin@example.com");
+  assert.equal(await page.locator(".shop-card").count(), 3);
+  await page
+    .getByRole("button", { name: "Открыть магазин 2", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "Магазин 2 · Центральный", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: /Склад магазина/ }).click();
+  assert.equal(await page.locator("#shop-scope").inputValue(), "1");
+  await page.locator("aside").getByRole("button", { name: "Главная" }).click();
+  await page
+    .getByRole("heading", { name: "Магазин 2 · Центральный", exact: true })
+    .waitFor();
+  await page.getByRole("button", { name: /Принять товар/ }).click();
+  assert.equal(await page.locator("#form select[name=shop]").inputValue(), "1");
+  await page.locator("#close-dialog").click();
+  await page.locator("#shop-scope").selectOption("-1");
+  await page
+    .getByRole("heading", { name: "Рабочий стол", exact: true })
+    .waitFor();
+  await page.locator("#report-date").fill("2026-01-01");
+  await page.locator("#report-date").dispatchEvent("change");
+  await page.getByRole("button", { name: "Сегодня", exact: true }).click();
+  await page.locator(".shop-card").first().waitFor();
   await page.screenshot({
     path: "outputs/browser/dashboard-desktop.png",
     fullPage: true,
@@ -137,6 +169,34 @@ try {
     .click();
   await page.locator("#login-form").waitFor();
   await login("manager@example.com");
+  assert.equal(await page.locator("#shop-scope option").count(), 1);
+  await page.locator("aside").getByRole("button", { name: "Касса" }).click();
+  await page
+    .getByRole("heading", { name: "Касса · Магазин 1", exact: true })
+    .waitFor();
+  assert.equal(await page.getByText("Прибыль:", { exact: false }).count(), 0);
+  await page
+    .getByRole("button", { name: "⇄ Перевести деньги", exact: true })
+    .click();
+  assert.equal(await page.locator("#form select[name=shop] option").count(), 1);
+  await page.locator("#form select[name=to]").selectOption("1");
+  await page.locator("#form input[name=amount]").fill("100");
+  await page
+    .locator("#form textarea[name=reason]")
+    .fill("Перевод на вторую точку");
+  await page.locator("#form button[type=submit]").click();
+  await page.locator("dialog").waitFor({ state: "hidden" });
+  await page.getByText("Перевод на вторую точку", { exact: false }).waitFor();
+  const { finance } = await import("../lib/finance.mjs");
+  assert.equal(finance(app.store.read(), admin).shops[1].cash, 10000);
+  await page.screenshot({
+    path: "outputs/browser/store-cash-transfer.png",
+    fullPage: true,
+  });
+  await page.locator("aside").getByRole("button", { name: "Главная" }).click();
+  await page
+    .getByRole("heading", { name: "Магазин 1 · Островок", exact: true })
+    .waitFor();
   assert.equal(
     await page
       .locator("aside")
@@ -190,7 +250,9 @@ try {
     .locator(".mobile-nav")
     .getByRole("button", { name: "Главная" })
     .click();
-  await page.getByRole("heading", { name: "Рабочий стол" }).waitFor();
+  await page
+    .getByRole("heading", { name: "Магазин 1 · Островок", exact: true })
+    .waitFor();
   await page.screenshot({
     path: "outputs/browser/dashboard-mobile.png",
     fullPage: true,

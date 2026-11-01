@@ -23,6 +23,38 @@ let session = null,
   users = [],
   busy = false,
   scanPending = 0;
+let selectedShop = -1;
+let selectedDate = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Europe/Moscow",
+}).format(new Date());
+const scopeShop = () => (priv() ? selectedShop : session.user.shop);
+const inShop = (d) =>
+  scopeShop() < 0 ||
+  d.shop === scopeShop() ||
+  (d.type === "transfer" && d.to === scopeShop());
+function selectShop(shop, nextTab = tab) {
+  if (scanPending || busy) return toast("Дождитесь сохранения");
+  if (!priv() && shop !== session.user.shop)
+    return toast("Доступна только ваша точка");
+  selectedShop = shop;
+  filter = shop;
+  tab = nextTab;
+  currentDoc = null;
+  render();
+}
+function selectDate(value) {
+  selectedDate = value;
+  render();
+}
+function reportURL() {
+  const params = new URLSearchParams();
+  if (scopeShop() >= 0) params.set("shop", scopeShop());
+  if (selectedDate) params.set("date", selectedDate);
+  return "/api/finance?" + params;
+}
+function periodPicker() {
+  return `<div class="period-picker"><label>Дата (Москва)<input id="report-date" type="date" value="${esc(selectedDate)}" onchange="selectDate(this.value)"></label><button class="secondary" onclick="selectDate(new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Moscow'}).format(new Date()))">Сегодня</button><button class="secondary" onclick="selectDate('')">Всё время</button></div>`;
+}
 const types = {
   receipt: "Приёмка",
   transfer: "Перемещение",
@@ -137,7 +169,11 @@ function show(html, onSubmit) {
   if (f && onSubmit)
     f.onsubmit = (e) => {
       e.preventDefault();
-      onSubmit(new FormData(f), f);
+      try {
+        onSubmit(new FormData(f), f);
+      } catch (error) {
+        toast(error.message);
+      }
     };
   $("dialog").showModal();
   setTimeout(
@@ -206,6 +242,7 @@ async function logout() {
     data = null;
     currentDoc = null;
     tab = "home";
+    selectedShop = -1;
     $("dialog").close();
     loginScreen();
   } catch (error) {
@@ -255,7 +292,7 @@ function render() {
     ["sale", "↗", "Продажи"],
     ["operations", "⋯", "Другие операции"],
   ];
-  if (priv()) nav.push(["finance", "₽", "Финансы и касса"]);
+  nav.push(["finance", "₽", priv() ? "Финансы и касса" : "Касса"]);
   if (session.user.role === "admin")
     nav.push(["admin", "⚙", "Администрирование"]);
   const active = ["returns", "writeoff", "audit"].includes(tab)
@@ -264,7 +301,7 @@ function render() {
       ? "admin"
       : tab;
   $("app").innerHTML =
-    `<div class="shell"><aside><div class="brand"><span class="brand-icon">А</span><div>АлиДжон<span>STORE / СКЛАД</span></div></div><div class="navlabel">РАБОТА С ТОВАРОМ</div>${nav.map(([v, icon, n]) => `<button class="nav ${active === v ? "active" : ""}" onclick="go('${v}')"><span class="nav-icon">${icon}</span>${n}${v === "transfer" && incoming().length ? '<span class="nav-count">' + incoming().length + "</span>" : ""}</button>`).join("")}<div class="navlabel locations">МАГАЗИНЫ</div>${data.shops.map((n, i) => `<button class="nav" onclick="filter=${i};go('products')">${esc(n)}<span>${data.products.reduce((s, p) => s + p.quantities[i], 0)}</span></button>`).join("")}<div class="aside-bottom"><div class="user-name">${esc(session.user.name)}</div><small>${roles[session.user.role]}${session.user.shop !== null ? " · " + esc(data.shops[session.user.shop]) : ""}</small><button class="export" onclick="changePassword()">Изменить пароль</button><button class="export" onclick="logout()">Выйти из аккаунта</button></div></aside><main><header><span>АлиДжон Store <b>/ ${nav.find((x) => x[0] === active)?.[2] || "Склад"}</b></span><div class="header-actions"><button class="export" onclick="refresh()">↻ Обновить</button><span class="avatar">${esc(session.user.name[0])}</span></div></header><div class="mobile-nav">${nav.map(([v, _, n]) => button(n, `go('${v}')`, active === v ? "primary" : "secondary")).join("")}<button class="secondary" onclick="changePassword()">Пароль</button><button class="secondary" onclick="logout()">Выйти</button></div><section class="content" id="content"></section></main></div>`;
+    `<div class="shell"><aside><div class="brand"><span class="brand-icon">А</span><div>АлиДжон<span>STORE / СКЛАД</span></div></div><div class="navlabel">РАБОТА С ТОВАРОМ</div>${nav.map(([v, icon, n]) => `<button class="nav ${active === v ? "active" : ""}" onclick="go('${v}')"><span class="nav-icon">${icon}</span>${n}${v === "transfer" && incoming().length ? '<span class="nav-count">' + incoming().length + "</span>" : ""}</button>`).join("")}<div class="navlabel locations">МАГАЗИНЫ</div>${data.shops.map((n, i) => (canStore(i) ? `<button class="nav ${scopeShop() === i ? "active" : ""}" onclick="selectShop(${i},'home')">Магазин ${i + 1} · ${esc(n)}<span>${data.products.reduce((s, p) => s + p.quantities[i], 0)}</span></button>` : "")).join("")}<div class="aside-bottom"><div class="user-name">${esc(session.user.name)}</div><small>${roles[session.user.role]}${session.user.shop !== null ? " · " + esc(data.shops[session.user.shop]) : ""}</small><button class="export" onclick="changePassword()">Изменить пароль</button><button class="export" onclick="logout()">Выйти из аккаунта</button></div></aside><main><header><span>АлиДжон Store <b>/ ${nav.find((x) => x[0] === active)?.[2] || "Склад"}</b></span><div class="header-actions"><button class="export" onclick="refresh()">↻ Обновить</button><span class="avatar">${esc(session.user.name[0])}</span></div></header><div class="mobile-nav">${nav.map(([v, _, n]) => button(n, `go('${v}')`, active === v ? "primary" : "secondary")).join("")}<button class="secondary" onclick="changePassword()">Пароль</button><button class="secondary" onclick="logout()">Выйти</button></div><div class="shop-scope"><label>Магазин<select id="shop-scope" onchange="selectShop(Number(this.value))">${priv() ? `<option value="-1" ${scopeShop() < 0 ? "selected" : ""}>Все магазины</option>` : ""}${data.shops.map((n, i) => (canStore(i) ? `<option value="${i}" ${scopeShop() === i ? "selected" : ""}>Магазин ${i + 1} · ${esc(n)}</option>` : "")).join("")}</select></label></div><section class="content" id="content"></section></main></div>`;
   if (tab === "home") home();
   else if (tab === "admin") adminHome();
   else if (tab === "operations") operationsHome();
@@ -286,13 +323,22 @@ async function refresh() {
   }
 }
 function products() {
-  const count = data.products.reduce((s, p) => s + total(p), 0),
+  filter = scopeShop();
+  const count = data.products.reduce(
+      (s, p) => s + (filter < 0 ? total(p) : p.quantities[filter]),
+      0,
+    ),
     transit =
-      data.units.filter((u) => u.status === "transit").length +
+      data.units.filter(
+        (u) =>
+          u.status === "transit" &&
+          data.documents.some((d) => d.id === u.transfer && inShop(d)),
+      ).length +
       data.documents
         .filter(
           (d) =>
             d.type === "transfer" &&
+            inShop(d) &&
             ["in_transit", "partial"].includes(d.status),
         )
         .reduce(
@@ -304,7 +350,7 @@ function products() {
           0,
         );
   $("content").innerHTML =
-    `<div class="heading"><div><div class="eyebrow">КАТАЛОГ И ОСТАТКИ</div><h1>Товары на складе</h1><p>Позиции, экземпляры и движение между магазинами.</p></div>${priv() ? button("＋ Создать позицию", "editProduct()", "primary") : ""}</div><div class="catalog-summary"><span><b>${data.products.length}</b> позиций</span><span><b>${count}</b> единиц на складе</span><span><b>${transit}</b> единиц в пути</span></div><div class="panel"><div class="toolbar"><div class="tabs">${["Все магазины", ...data.shops].map((n, i) => `<button class="${filter === i - 1 ? "selected" : ""}" onclick="filter=${i - 1};products()">${esc(n)}</button>`).join("")}</div>${button("↓ CSV", "exportCSV()", "export")}</div><div class="filters"><label class="search"><input id="search" value="${esc(search)}" placeholder="Название, штрих-код или серийный номер" oninput="search=this.value;productRows()"></label></div><div id="product-rows"></div></div><footer>Создание позиции не меняет остаток<span>Товар появляется после проведения приёмки</span></footer>`;
+    `<div class="heading"><div><div class="eyebrow">КАТАЛОГ И ОСТАТКИ</div><h1>Товары на складе</h1><p>Позиции, экземпляры и движение между магазинами.</p></div>${priv() ? button("＋ Создать позицию", "editProduct()", "primary") : ""}</div><div class="catalog-summary"><span><b>${data.products.length}</b> позиций</span><span><b>${count}</b> единиц на складе</span><span><b>${transit}</b> единиц в пути</span></div><div class="panel"><div class="toolbar"><div class="tabs">${["Все магазины", ...data.shops].map((n, i) => ((i === 0 ? priv() : canStore(i - 1)) ? `<button class="${filter === i - 1 ? "selected" : ""}" onclick="selectShop(${i - 1},'products')">${esc(n)}</button>` : "")).join("")}</div>${button("↓ CSV", "exportCSV()", "export")}</div><div class="filters"><label class="search"><input id="search" value="${esc(search)}" placeholder="Название, штрих-код или серийный номер" oninput="search=this.value;productRows()"></label></div><div id="product-rows"></div></div><footer>Создание позиции не меняет остаток<span>Товар появляется после проведения приёмки</span></footer>`;
   productRows();
 }
 function productRows() {
@@ -379,6 +425,7 @@ function productDetails(id) {
 let docFilter = "all";
 function documents() {
   const all = data.documents
+      .filter(inShop)
       .filter((d) =>
         tab === "returns"
           ? ["customer_return", "supplier_return"].includes(d.type)
@@ -402,10 +449,14 @@ function documents() {
 
 function newDocument(kind, presetProduct) {
   const sales = data.documents.filter(
-    (d) => d.type === "sale" && d.status === "posted" && canStore(d.shop),
+    (d) =>
+      d.type === "sale" &&
+      d.status === "posted" &&
+      canStore(d.shop) &&
+      inShop(d),
   );
   show(
-    `<h2>${types[kind]}</h2><form><label>${kind === "transfer" ? "Откуда" : "Магазин"}<select name="shop">${storeOptions(session.user.shop ?? 0)}</select></label>${kind === "transfer" ? `<label>Куда<select name="to">${storeOptions(1, false)}</select></label>` : ""}${kind === "sale" ? '<label>Оплата<select name="payment"><option value="cash">Наличные</option><option value="card">Карта / безналичные</option></select></label>' : ""}${kind === "customer_return" ? `<label>Исходная продажа<select name="sale" required><option value="">Выберите продажу</option>${sales.map((d) => `<option value="${d.id}">№${d.number} · ${esc(data.shops[d.shop])} · ${fmt(d.created)}</option>`).join("")}</select></label>` : ""}${["writeoff", "supplier_return"].includes(kind) ? '<label>Причина<textarea name="reason" required maxlength="1000" rows="3"></textarea></label>' : ""}<button class="primary full" data-submit type="submit">Создать черновик</button></form>`,
+    `<h2>${types[kind]}</h2><form><label>${kind === "transfer" ? "Откуда" : "Магазин"}<select name="shop">${storeOptions(scopeShop() >= 0 ? scopeShop() : 0)}</select></label>${kind === "transfer" ? `<label>Куда<select name="to">${storeOptions(((scopeShop() >= 0 ? scopeShop() : 0) + 1) % 3, false)}</select></label>` : ""}${kind === "sale" ? '<label>Оплата<select name="payment"><option value="cash">Наличные</option><option value="card">Карта / безналичные</option></select></label>' : ""}${kind === "customer_return" ? `<label>Исходная продажа<select name="sale" required><option value="">Выберите продажу</option>${sales.map((d) => `<option value="${d.id}">№${d.number} · ${esc(data.shops[d.shop])} · ${fmt(d.created)}</option>`).join("")}</select></label>` : ""}${["writeoff", "supplier_return"].includes(kind) ? '<label>Причина<textarea name="reason" required maxlength="1000" rows="3"></textarea></label>' : ""}<button class="primary full" data-submit type="submit">Создать черновик</button></form>`,
     (f) =>
       act(
         {
@@ -872,7 +923,7 @@ function editUser(id) {
       )
       .join(
         "",
-      )}</select></label><label>Магазин менеджера<select name="shop">${storeOptions(u.shop ?? 0, false)}</select></label><label class="check"><input name="active" type="checkbox" ${u.active ? "checked" : ""}>Доступ активен</label><p>Сотрудник входит по этому логину и паролю. Менеджер работает только со своей точкой; закупочные цены и финансы скрыты.</p><button class="primary full" data-submit type="submit">Сохранить доступ</button></form>`,
+      )}</select></label><label>Магазин менеджера<select name="shop">${storeOptions(u.shop ?? 0, false)}</select></label><label class="check"><input name="active" type="checkbox" ${u.active ? "checked" : ""}>Доступ активен</label><p>Сотрудник входит по этому логину и паролю. Менеджер работает только со своей точкой; закупочные цены и прибыль скрыты, касса доступна только своей точки.</p><button class="primary full" data-submit type="submit">Сохранить доступ</button></form>`,
     async (f) => {
       if (busy) return;
       busy = true;
@@ -993,69 +1044,68 @@ function incoming() {
     (d) =>
       d.type === "transfer" &&
       ["in_transit", "partial"].includes(d.status) &&
-      canStore(d.to),
+      canStore(d.to) &&
+      (scopeShop() < 0 || d.to === scopeShop()),
   );
 }
 function docRow(d) {
   return `<button class="doc-link" onclick="openDoc('${d.id}')"><div class="doc-main"><span class="doc-kind-icon">${{ receipt: "↓", transfer: "⇄", sale: "↗", customer_return: "↩", supplier_return: "↩", writeoff: "−" }[d.type]}</span><div><b>${types[d.type]} №${d.number}</b><span>${esc(data.shops[d.shop])}${d.to !== null ? " → " + esc(data.shops[d.to]) : ""} · ${d.lines.reduce((s, l) => s + l.quantity, 0)} шт.</span></div></div><div class="doc-right"><span class="status ${d.status}">${statuses[d.status]}</span><small>${fmt(d.created)}</small></div></button>`;
 }
-function home() {
-  const drafts = data.documents.filter(
-      (d) => d.status === "draft" && canStore(d.shop),
-    ),
-    pending = incoming(),
-    mine = data.products.reduce(
-      (n, p) =>
-        n +
-        (session.user.shop !== null
-          ? p.quantities[session.user.shop]
-          : total(p)),
-      0,
-    ),
-    scope =
-      session.user.shop !== null
-        ? data.shops[session.user.shop]
-        : "Все три магазина";
-  const today = new Date().toLocaleDateString("ru-RU", {
-      timeZone: "Europe/Moscow",
-    }),
-    sales = data.documents.filter(
-      (d) =>
-        d.type === "sale" &&
-        d.status === "posted" &&
-        canStore(d.shop) &&
-        new Date(d.posted || d.created).toLocaleDateString("ru-RU", {
-          timeZone: "Europe/Moscow",
-        }) === today,
+let screenRequest = 0;
+async function home() {
+  const root = $("content"),
+    request = ++screenRequest;
+  root.innerHTML = '<div class="small-empty">Загружаем магазины…</div>';
+  try {
+    const report = await api(reportURL());
+    if (tab !== "home" || root !== $("content") || request !== screenRequest)
+      return;
+    const shop = scopeShop(),
+      pending = incoming(),
+      scopedDocs = data.documents.filter(inShop);
+    const title =
+      shop < 0 ? "Рабочий стол" : `Магазин ${shop + 1} · ${data.shops[shop]}`;
+    const summary = report.shops.reduce(
+      (n, s) => ({
+        revenue: n.revenue + s.netRevenue,
+        cash: n.cash + s.cash,
+        stock: n.stock + s.inventoryUnits,
+        sales: n.sales + s.salesCount,
+      }),
+      { revenue: 0, cash: 0, stock: 0, sales: 0 },
     );
-  $("content").innerHTML =
-    `<div class="heading"><div><div class="eyebrow">${esc(scope)}</div><h1>Рабочий стол</h1><p>Всё для работы с товаром — в одном месте.</p></div><span class="today-date">${new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "Europe/Moscow" })}</span></div><div class="quick-actions">${[
+    root.innerHTML = `<div class="heading"><div><div class="eyebrow">${shop < 0 ? "ВСЕ МАГАЗИНЫ" : "СКЛАД И КАССА ТОЧКИ"}</div><h1>${esc(title)}</h1><p>${selectedDate ? "Показатели за выбранный день" : "Показатели за всё время"}. Остатки товара и наличных — текущие.</p></div></div>${periodPicker()}<div class="summary-strip"><div><span>На складе</span><b>${summary.stock} <small>шт.</small></b></div><div><span>Выручка после возвратов</span><b>${money(summary.revenue)}</b></div><div><span>Продажи ${selectedDate ? "за день" : "за всё время"}</span><b>${summary.sales} <small>документов</small></b></div><div><span>Наличные сейчас</span><b>${money(summary.cash)}</b></div></div>${shop < 0 ? `<div class="shop-grid">${report.shops.map((s) => `<button class="shop-card panel" aria-label="Открыть магазин ${s.shop + 1}" onclick="selectShop(${s.shop},'home')"><span class="eyebrow">МАГАЗИН ${s.shop + 1}</span><h2>${esc(s.name)}</h2><dl><div><dt>На складе</dt><dd>${s.inventoryUnits} шт.</dd></div><div><dt>Выручка</dt><dd>${money(s.netRevenue)}</dd></div><div><dt>Наличные сейчас</dt><dd>${money(s.cash)}</dd></div><div><dt>Продажи</dt><dd>${s.salesCount}</dd></div></dl><b>Открыть склад и кассу →</b></button>`).join("")}</div>` : `<div class="quick-actions"><button onclick="go('products')"><span class="quick-icon">▣</span><b>Склад магазина</b><small>Остатки и серийные номера</small></button><button onclick="go('finance')"><span class="quick-icon">₽</span><b>Касса магазина</b><small>Деньги и кассовые операции</small></button><button onclick="newDocument('transfer')"><span class="quick-icon">⇄</span><b>Переместить товар</b><small>Отправить в другой магазин</small></button></div>`}<div class="quick-actions">${[
       ["receipt", "↓", "Принять товар", "Добавить поступление в магазин"],
       ["transfer", "⇄", "Переместить", "Отправить товар в другой магазин"],
       ["sale", "↗", "Продать", "Выбрать товары и оформить продажу"],
     ]
       .map(
         ([type, icon, title, text]) =>
-          `<button onclick="newDocument('${type}')"><span class="quick-icon">${icon}</span><b>${title}</b><small>${text}</small><span class="quick-arrow">↗</span></button>`,
+          `<button onclick="newDocument('${type}')"><span class="quick-icon">${icon}</span><b>${title}</b><small>${text}</small></button>`,
       )
       .join(
         "",
-      )}</div><div class="summary-strip"><div><span>На складе</span><b>${mine.toLocaleString("ru-RU")} <small>шт.</small></b></div><div><span>Ждут приёмки</span><b>${pending.length} <small>отправлений</small></b></div><div><span>Продажи сегодня</span><b>${sales.length} <small>документов</small></b></div><div><span>Черновики</span><b>${drafts.length} <small>документов</small></b></div></div>${!data.products.length ? `<div class="start-banner"><div><span class="eyebrow">ПЕРВЫЙ ШАГ</span><h2>Добавьте товары в каталог</h2><p>Создайте позицию с названием и штрих-кодом. Затем внесите поступление.</p></div>${priv() ? button("＋ Создать первую позицию", "editProduct()", "primary") : ""}</div>` : ""}<div class="dashboard-grid"><section class="panel"><div class="section-head"><div><h2>Нужно принять</h2><p>Подтвердите фактически полученный товар.</p></div><span class="section-number">${pending.length}</span></div>${pending.length ? pending.map(docRow).join("") : '<div class="quiet-empty"><span>✓</span><b>Все отправления приняты</b><p>Новые перемещения появятся здесь.</p></div>'}</section><section class="panel"><div class="section-head"><div><h2>Продолжить работу</h2><p>Сохранённые черновики документов.</p></div><span class="section-number">${drafts.length}</span></div>${drafts.length ? drafts.slice(-5).reverse().map(docRow).join("") : '<div class="quiet-empty"><span>▤</span><b>Незавершённых документов нет</b><p>Начните с кнопок выше.</p></div>'}</section></div><div class="section-head recent-head"><h2>Последние операции</h2>${button("Вся история", "go('audit')", "export")}</div><div class="panel">${
-      data.documents
-        .filter(
-          (d) =>
-            d.status !== "draft" &&
-            d.status !== "cancelled" &&
-            (priv() ||
-              d.shop === session.user.shop ||
-              d.to === session.user.shop),
-        )
-        .slice(-4)
+      )}</div>${!data.products.length ? `<div class="start-banner"><div><h2>Добавьте товары в каталог</h2><p>Создайте позицию, затем внесите поступление.</p></div>${priv() ? button("＋ Создать первую позицию", "editProduct()", "primary") : ""}</div>` : ""}<div class="dashboard-grid"><section class="panel"><div class="section-head"><h2>Нужно принять</h2><span class="section-number">${pending.length}</span></div>${pending.map(docRow).join("") || '<div class="quiet-empty"><b>Все отправления приняты</b></div>'}</section><section class="panel"><div class="section-head"><h2>Продолжить работу</h2></div>${
+      scopedDocs
+        .filter((d) => d.status === "draft" && canStore(d.shop))
+        .slice(-5)
+        .reverse()
+        .map(docRow)
+        .join("") ||
+      '<div class="quiet-empty"><b>Незавершённых документов нет</b></div>'
+    }</section></div><div class="section-head recent-head"><h2>Последние операции</h2></div><div class="panel">${
+      scopedDocs
+        .filter((d) => !["draft", "cancelled"].includes(d.status))
+        .slice(-5)
         .reverse()
         .map(docRow)
         .join("") ||
       '<div class="small-empty">Проведённые документы появятся здесь.</div>'
     }</div>`;
+  } catch (error) {
+    if (root === $("content"))
+      root.innerHTML = '<div class="error">' + esc(error.message) + "</div>";
+  }
 }
 function operationsHome() {
   $("content").innerHTML =
@@ -1142,41 +1192,22 @@ function showUnknownPurchases() {
 
 let financeRequest = 0;
 async function financeScreen() {
-  if (!priv()) return go("home");
-  const request = ++financeRequest;
-  $("content").innerHTML = '<div class="small-empty">Загружаем финансы…</div>';
+  const root = $("content"),
+    request = ++financeRequest;
+  root.innerHTML = '<div class="small-empty">Загружаем кассу…</div>';
   try {
-    const report = await api("/api/finance");
-    if (tab !== "finance" || request !== financeRequest) return;
-    const totals = report.shops.reduce(
-      (a, s) => {
-        for (const k of [
-          "revenue",
-          "refunds",
-          "netRevenue",
-          "knownCost",
-          "expenses",
-          "cash",
-          "writeoffCost",
-        ])
-          a[k] = (a[k] || 0) + s[k];
-        a.unknown += s.unknownCostUnits + s.unknownWriteoffUnits;
-        return a;
-      },
-      { unknown: 0 },
-    );
-    const profit = totals.unknown
-      ? null
-      : totals.netRevenue -
-        totals.knownCost -
-        totals.expenses -
-        totals.writeoffCost;
-    $("content").innerHTML =
-      `<div class="heading"><div><div class="eyebrow">ФИНАНСЫ И КАССА</div><h1>Деньги по точкам</h1><p>Проведённые документы за всё время. Карта учитывается в выручке, наличные — в кассе.</p></div>${button("＋ Кассовая операция", "cashDialog()", "primary")}</div><div class="summary-strip"><div><span>Выручка после возвратов</span><b>${money(totals.netRevenue)}</b></div><div><span>Расходы</span><b>${money(totals.expenses)}</b></div><div><span>Прибыль после списаний</span><b>${profit === null ? "Не определена" : money(profit)}</b></div><div><span>Наличные в кассах</span><b>${money(totals.cash)}</b></div></div>${totals.unknown ? '<div class="notice">У части товаров неизвестна закупочная цена. Итоговая прибыль не определена. Неизвестная себестоимость не считается нулевой. Заполняйте закупку до проведения приёмок.</div>' : ""}<div class="panel table-wrap"><table><thead><tr><th>МАГАЗИН</th><th>ПРОДАЖИ</th><th>ВОЗВРАТЫ</th><th>СЕБЕСТОИМОСТЬ*</th><th>СПИСАНИЯ*</th><th>РАСХОДЫ</th><th>ПРИБЫЛЬ</th><th>КАССА</th></tr></thead><tbody>${report.shops.map((s) => `<tr><td>${esc(s.name)}</td><td>${money(s.revenue)}</td><td>${money(s.refunds)}</td><td>${money(s.knownCost)}</td><td>${money(s.writeoffCost)}</td><td>${money(s.expenses)}</td><td>${s.profit === null ? "Не определена" : money(s.profit)}</td><td>${money(s.cash)}</td></tr>`).join("")}</tbody></table></div><p class="hint">* Известная себестоимость. Телефоны — по экземпляру, аксессуары — по партиям FIFO. Возврат уменьшает выручку и себестоимость исходной продажи.</p><div class="section-head recent-head"><h2>Кассовые операции</h2></div><div class="panel">${report.entries.map((e) => `<div class="event"><div><b>${esc(cashTypes[e.type])} · ${esc(data.shops[e.shop])} · ${money(e.amount)}</b><p>${esc(e.reason)} · ${esc(e.actor)}</p></div><time>${fmt(e.at)}</time></div>`).join("") || '<div class="small-empty">Ручных операций пока нет. Продажи и возвраты учитываются автоматически.</div>'}</div>`;
+    const report = await api(reportURL());
+    if (
+      tab !== "finance" ||
+      root !== $("content") ||
+      request !== financeRequest
+    )
+      return;
+    const shop = scopeShop();
+    root.innerHTML = `<div class="heading"><div><div class="eyebrow">ФИНАНСЫ И КАССА</div><h1>${shop < 0 ? "Деньги по точкам" : `Касса · Магазин ${shop + 1}`}</h1><p>Продажи и операции ${selectedDate ? "за выбранный день" : "за всё время"}. Текущая касса учитывает всю историю.</p></div><div class="card-actions">${button("＋ Кассовая операция", "cashDialog()", "primary")}${button("⇄ Перевести деньги", "cashTransferDialog()", "primary")}</div></div>${periodPicker()}${report.shops.map((s) => `<section class="panel finance-shop"><h2>${esc(s.name)}</h2><div class="summary-strip"><div><span>Выручка после возвратов</span><b>${money(s.netRevenue)}</b></div><div><span>Наличные сейчас</span><b>${money(s.cash)}</b></div><div><span>Наличные на начало ${selectedDate ? "дня" : "учёта"}</span><b>${money(s.cashOpening)}</b></div><div><span>Наличные на конец ${selectedDate ? "дня" : "периода"}</span><b>${money(s.cashClosing)}</b></div></div><div class="cash-details"><span>Наличные продажи: <b>${money(s.cashSales)}</b></span><span>Карта: <b>${money(s.cardSales)}</b></span><span>Возвраты: <b>${money(s.refunds)}</b></span><span>Расходы: <b>${money(s.expenses)}</b></span>${priv() ? `<span>Себестоимость: <b>${money(s.knownCost)}</b></span><span>Прибыль: <b>${s.profit === null ? "Не определена" : money(s.profit)}</b></span>` : ""}</div></section>`).join("")}<div class="section-head recent-head"><h2>Кассовые операции</h2></div><div class="panel">${report.entries.map((e) => `<div class="event"><div><b>${cashTypes[e.type]} · ${esc(data.shops[e.shop])}${e.type === "transfer" ? " → " + esc(data.shops[e.to]) : ""} · ${money(e.amount)}</b><p>${esc(e.reason)} · ${esc(e.actor)}</p></div><time>${fmt(e.at)}</time></div>`).join("") || '<div class="small-empty">Ручных операций за период нет. Продажи и возвраты учтены автоматически.</div>'}</div>`;
   } catch (error) {
-    if (tab === "finance")
-      $("content").innerHTML =
-        '<div class="error">' + esc(error.message) + "</div>";
+    if (root === $("content"))
+      root.innerHTML = '<div class="error">' + esc(error.message) + "</div>";
   }
 }
 const cashTypes = {
@@ -1184,53 +1215,58 @@ const cashTypes = {
   deposit: "Внесение",
   withdrawal: "Изъятие",
   expense: "Расход",
+  transfer: "Перевод между кассами",
 };
 function cashDialog() {
   show(
-    `<h2>Кассовая операция</h2><form><label>Магазин<select name="shop">${storeOptions(0, false)}</select></label><label>Тип<select name="type">${Object.entries(
+    `<h2>Кассовая операция</h2><form><label>Магазин<select name="shop">${storeOptions(scopeShop() >= 0 ? scopeShop() : 0)}</select></label><label>Тип<select name="type">${Object.entries(
       cashTypes,
     )
+      .filter(([k]) => k !== "transfer" && (priv() || k !== "opening"))
       .map(([k, v]) => `<option value="${k}">${v}</option>`)
       .join(
         "",
-      )}</select></label>${priceInput("amount", "Сумма, ₽", 0)}<label>Назначение<textarea name="reason" maxlength="500" required></textarea></label><p>Внесение и изъятие меняют кассу. Расход уменьшает кассу и прибыль. Начальный остаток задаётся один раз на точку.</p><button type="submit" data-submit class="primary full">Сохранить</button></form>`,
-    async (f) => {
-      if (busy) return;
-      busy = true;
-      try {
-        const amount = price(f, "amount");
-        if (amount <= 0) throw Error("Укажите положительную сумму");
-        await api("/api/cash", {
-          shop: Number(f.get("shop")),
-          type: f.get("type"),
-          amount,
-          reason: f.get("reason"),
-        });
-        $("dialog").close();
-        await financeScreen();
-        toast("Операция сохранена");
-      } catch (error) {
-        toast(error.message);
-      } finally {
-        busy = false;
-      }
-    },
+      )}</select></label>${priceInput("amount", "Сумма, ₽", 0)}<label>Назначение<textarea name="reason" maxlength="500" required></textarea></label><p>Изъятие и расход не могут превышать наличные в кассе.</p><button type="submit" data-submit class="primary full">Сохранить</button></form>`,
+    (f) =>
+      saveCash({
+        shop: Number(f.get("shop")),
+        type: f.get("type"),
+        amount: price(f, "amount"),
+        reason: f.get("reason"),
+      }),
   );
 }
-const warehouseHome = home;
-home = function () {
-  warehouseHome();
-  if (!priv()) return;
-  const root = $("content");
-  api("/api/finance")
-    .then((report) => {
-      if (tab !== "home" || root !== $("content")) return;
-      const cash = report.shops.reduce((n, s) => n + s.cash, 0),
-        revenue = report.shops.reduce((n, s) => n + s.netRevenue, 0);
-      const block = document.createElement("div");
-      block.className = "notice finance-cards";
-      block.innerHTML = `<b>Выручка за всё время: ${money(revenue)}</b> · Наличные в кассах: ${money(cash)} ${button("Открыть финансы", "go('finance')")}`;
-      root.querySelector(".summary-strip")?.after(block);
-    })
-    .catch((error) => toast(error.message));
-};
+function cashTransferDialog() {
+  const source = scopeShop() >= 0 ? scopeShop() : 0;
+  show(
+    `<h2>Перевод между кассами</h2><form><label>Откуда<select name="shop">${storeOptions(source)}</select></label><label>Куда<select name="to">${storeOptions((source + 1) % 3, false)}</select></label>${priceInput("amount", "Сумма, ₽", 0)}<label>Назначение<textarea name="reason" maxlength="500" required></textarea></label><p>Одна операция уменьшит кассу отправителя и увеличит кассу получателя. Общая сумма денег и прибыль не изменятся.</p><button type="submit" data-submit class="primary full">Перевести деньги</button></form>`,
+    (f) =>
+      saveCash({
+        type: "transfer",
+        shop: Number(f.get("shop")),
+        to: Number(f.get("to")),
+        amount: price(f, "amount"),
+        reason: f.get("reason"),
+      }),
+  );
+}
+async function saveCash(body) {
+  if (busy) return;
+  busy = true;
+  $("form")
+    .querySelectorAll("button[type=submit]")
+    .forEach((b) => (b.disabled = true));
+  try {
+    await api("/api/cash", body);
+    $("dialog").close();
+    await financeScreen();
+    toast("Операция сохранена");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    busy = false;
+    $("form")
+      .querySelectorAll("button[type=submit]")
+      .forEach((b) => (b.disabled = false));
+  }
+}

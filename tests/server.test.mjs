@@ -111,7 +111,12 @@ test("manager isolation covers documents, serials, balances, audit snapshots and
       },
     }),
   );
-  assert.throws(() => finance(x.state, manager));
+  const cashReport = finance(x.state, manager);
+  assert.deepEqual(
+    cashReport.shops.map((s) => s.shop),
+    [0],
+  );
+  assert(!("profit" in cashReport.shops[0]));
   const draft = x.run({ action: "create", type: "sale", shop: 0 }, manager);
   x.run({ action: "line", id: draft, product }, manager);
   const line = x.state.documents.at(-1).lines[0].id;
@@ -503,7 +508,14 @@ test("HTTP auth, CSRF, idempotency, serial sales, concurrent posts, finance, exp
         .status,
       200,
     );
-    assert.equal((await call(manager, "/api/finance")).status, 403);
+    const scopedFinance = await call(manager, "/api/finance");
+    assert.equal(scopedFinance.status, 200);
+    assert.deepEqual(
+      scopedFinance.data.shops.map((s) => s.shop),
+      [0],
+    );
+    assert(!("profit" in scopedFinance.data.shops[0]));
+    assert.equal((await call(manager, "/api/finance?shop=1")).status, 403);
     assert.equal((await call(manager, "/api/users")).status, 403);
     const sale = (
       await call(manager, "/api/action", {
@@ -547,7 +559,7 @@ test("HTTP auth, CSRF, idempotency, serial sales, concurrent posts, finance, exp
     assert.equal(
       (
         await call(manager, "/api/cash", {
-          shop: 0,
+          shop: 1,
           type: "deposit",
           amount: 1,
           reason: "No",

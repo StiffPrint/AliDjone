@@ -1754,3 +1754,119 @@ a:focus-visible {
 .error[hidden] {
   display: none;
 }
+
+.shop-scope {
+  padding: 16px 32px 0;
+}
+.shop-scope label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: #61776d;
+}
+.shop-scope select {
+  width: auto;
+  min-width: 210px;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #dce6e1;
+  border-radius: 10px;
+  background: white;
+}
+.period-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 0 0 22px;
+}
+.period-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #61776d;
+  font-size: 12px;
+}
+.period-picker input {
+  border: 1px solid #dce6e1;
+  border-radius: 9px;
+  padding: 10px;
+  background: white;
+}
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 24px 0;
+}
+.shop-card {
+  text-align: left;
+  color: inherit;
+  padding: 24px;
+  cursor: pointer;
+  min-width: 0;
+}
+.shop-card:hover {
+  border-color: #187d65;
+}
+.shop-card h2 {
+  margin: 12px 0 18px;
+}
+.shop-card dl {
+  margin: 0 0 20px;
+}
+.shop-card dl div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+}
+.shop-card dt {
+  color: #61776d;
+}
+.shop-card dd {
+  font-weight: 600;
+  margin: 0;
+}
+.shop-card > b {
+  color: #187d65;
+}
+.finance-shop {
+  margin-bottom: 18px;
+  padding: 24px;
+}
+.finance-shop > h2 {
+  margin-bottom: 18px;
+}
+.cash-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding-top: 15px;
+  font-size: 13px;
+  color: #61776d;
+}
+.cash-details b {
+  color: #243a30;
+}
+@media (max-width: 900px) {
+  .shop-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .shop-scope {
+    padding: 12px 15px 0;
+  }
+  .shop-scope label {
+    flex-wrap: wrap;
+  }
+  .finance-shop {
+    padding: 16px;
+  }
+  .period-picker {
+    gap: 8px;
+  }
+}
